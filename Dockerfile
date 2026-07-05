@@ -17,16 +17,14 @@ RUN pip install --no-cache-dir -r requirements.txt
 RUN python -c "from sentence_transformers import CrossEncoder; CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')"
 
 COPY knowledge_base/ ./knowledge_base/
-COPY ingest.py query_engine.py main.py ./
+COPY ingest.py query_engine.py main.py start.sh ./
+RUN chmod +x start.sh
 
-# Build the FAISS index into the image at build time (documents are static
-# for the hackathon demo, so there's no need to run ingest.py at startup)
-ARG GEMINI_API_KEY
-ENV GEMINI_API_KEY=${GEMINI_API_KEY}
-RUN python ingest.py
-
-# Cloud Run injects $PORT; default to 8080 for local testing
+# Cloud Run injects $PORT; default to 8080 for local testing.
+# GEMINI_API_KEY is set as a runtime environment variable in the Cloud Run
+# console — the index is built on first container startup, not at build time,
+# so no build-time secret is needed.
 ENV PORT=8080
 EXPOSE 8080
 
-CMD exec uvicorn main:app --host 0.0.0.0 --port ${PORT}
+CMD ["./start.sh"]
