@@ -1,0 +1,7 @@
+google-genai
+faiss-cpu
+sentence-transformers
+numpy
+fastapi
+uvicorn
+python-multipart

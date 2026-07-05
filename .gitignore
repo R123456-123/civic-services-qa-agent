@@ -1,0 +1,18 @@
+# Environment / secrets — never commit your API key
+.env
+*.env
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Generated at ingest time — Cloud Run rebuilds these on first startup,
+# no need to commit them (and the index can get large)
+civic_kb.index
+civic_kb_metadata.json
+
+# OS/editor cruft
+.DS_Store
+.vscode/
