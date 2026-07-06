@@ -53,7 +53,19 @@ def health():
 @app.post("/ask", response_model=AskResponse)
 def ask(request: AskRequest):
     start = time.time()
-    result = answer_question(request.question)
+    try:
+        result = answer_question(request.question)
+    except Exception as e:
+        latency_ms = int((time.time() - start) * 1000)
+        if "429" in str(e):
+            logger.warning("rate limited: query=%r", request.question)
+            return AskResponse(
+                answer="We're getting a lot of questions right now and hit a temporary limit. Please wait about 30 seconds and try again.",
+                sources=[],
+                latency_ms=latency_ms,
+            )
+        logger.exception("unexpected error: query=%r", request.question)
+        raise
     latency_ms = int((time.time() - start) * 1000)
 
     logger.info(

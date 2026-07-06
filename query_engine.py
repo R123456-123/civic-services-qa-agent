@@ -14,11 +14,13 @@ Run directly for a quick interactive test:
 
 import os
 import json
+import time
 import numpy as np
 import faiss
 from sentence_transformers import CrossEncoder
 from google import genai
 from google.genai import types
+from google.genai.errors import ClientError
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -64,30 +66,54 @@ def translate_query_for_retrieval(query):
     """The embedding model is multilingual, but the cross-encoder reranker
     is English-only. Translate non-English queries to English just for
     retrieval/reranking — the original query (and its language) is still
-    what gets passed to Gemini for the final answer."""
+    what gets passed to Gemini for the final answer.
+
+    Skips the API call entirely for plain ASCII text (the common case),
+    since that's already English or close enough for retrieval to work
+    fine untranslated — this halves Gemini calls per question on the
+    free tier's tight rate limit."""
+    if query.isascii():
+        return query
+
     prompt = (
         "If the following text is not already in English, translate it to English. "
         "If it is already in English, return it unchanged. "
         "Return ONLY the text, no explanation.\n\n"
         f"Text: {query}"
     )
-    response = client.models.generate_content(
+    response = _call_with_retry(lambda: client.models.generate_content(
         model=GEN_MODEL,
         contents=prompt,
         config=types.GenerateContentConfig(temperature=0),
-    )
+    ))
     return response.text.strip()
 
 
+def _call_with_retry(fn, max_attempts=3, base_delay=2):
+    """Retry a Gemini API call on 429 (rate limit) with exponential backoff.
+    Free-tier RPM limits are tight enough that a burst of real user traffic
+    can trip them — this keeps a single slow moment from becoming a visible
+    500 error, without masking genuine failures."""
+    for attempt in range(max_attempts):
+        try:
+            return fn()
+        except ClientError as e:
+            is_rate_limit = getattr(e, "code", None) == 429 or "429" in str(e)
+            if is_rate_limit and attempt < max_attempts - 1:
+                time.sleep(base_delay * (2 ** attempt))
+                continue
+            raise
+
+
 def embed_query(text):
-    result = client.models.embed_content(
+    result = _call_with_retry(lambda: client.models.embed_content(
         model=EMBED_MODEL,
         contents=text,
         config=types.EmbedContentConfig(
             task_type="RETRIEVAL_QUERY",
             output_dimensionality=EMBED_DIM,
         ),
-    )
+    ))
     vec = np.array([result.embeddings[0].values], dtype="float32")
     faiss.normalize_L2(vec)
     return vec
@@ -112,14 +138,14 @@ def generate_answer(query, context_chunks):
     )
     prompt = f"{SYSTEM_PROMPT}\n\nContext:\n{context_block}\n\nCitizen's question: {query}"
 
-    response = client.models.generate_content(
+    response = _call_with_retry(lambda: client.models.generate_content(
         model=GEN_MODEL,
         contents=prompt,
         config=types.GenerateContentConfig(
             temperature=0.2,
             response_mime_type="application/json",
         ),
-    )
+    ))
     try:
         parsed = json.loads(response.text)
         return {
