@@ -33,8 +33,8 @@ EMBED_DIM = 768
 INDEX_PATH = "civic_kb.index"
 METADATA_PATH = "civic_kb_metadata.json"
 
-TOP_K_RETRIEVE = 8
-TOP_K_RERANK = 3
+TOP_K_RETRIEVE = 10
+TOP_K_RERANK = 5
 
 client = genai.Client(api_key=GEMINI_API_KEY)
 _index = faiss.read_index(INDEX_PATH)
